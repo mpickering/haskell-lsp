@@ -52,6 +52,7 @@ library
                      , sorted-list == 0.2.1.*
                      , stm
                      , text
+                     , temporary
                      , time
                      , unordered-containers
                      , yi-rope
