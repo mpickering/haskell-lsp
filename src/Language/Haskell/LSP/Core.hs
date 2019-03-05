@@ -127,6 +127,7 @@ data LspFuncs c =
       -- server-provided function.
     , sendFunc                     :: !SendFunc
     , getVirtualFileFunc           :: !(J.Uri -> IO (Maybe VirtualFile))
+    , persistVirtualFileFunc       :: !(J.Uri -> IO FilePath)
     , publishDiagnosticsFunc       :: !PublishDiagnosticsFunc
     , flushDiagnosticsBySourceFunc :: !FlushDiagnosticsBySourceFunc
     , getNextReqId                 :: !(IO J.LspId)
@@ -368,6 +369,14 @@ hwf h tvarDat json = do
 getVirtualFile :: TVar (LanguageContextData c) -> J.Uri -> IO (Maybe VirtualFile)
 getVirtualFile tvarDat uri = Map.lookup uri . resVFS <$> readTVarIO tvarDat
 
+persistVirtualFile :: TVar (LanguageContextData c) -> J.Uri -> IO FilePath
+persistVirtualFile tvarDat uri = do
+  vfs <- resVFS <$> readTVarIO tvarDat
+  (fn, new_vfs) <- persistFileVFS vfs uri
+  atomically $ modifyTVar' tvarDat (\d -> d { resVFS = new_vfs })
+  return fn
+
+
 -- ---------------------------------------------------------------------
 
 getConfig :: TVar (LanguageContextData c) -> IO (Maybe c)
@@ -577,6 +586,7 @@ initializeRequestHandler' (_configHandler,dispatcherProc) mHandler tvarCtx req@(
                             (getConfig tvarCtx)
                             (resSendResponse ctx0)
                             (getVirtualFile tvarCtx)
+                            (persistVirtualFile tvarCtx)
                             (publishDiagnostics tvarCtx)
                             (flushDiagnosticsBySource tvarCtx)
                             (getLspId $ resLspId ctx0)
