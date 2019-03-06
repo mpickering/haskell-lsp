@@ -43,7 +43,6 @@ import qualified Language.Haskell.LSP.Types           as J
 import qualified Language.Haskell.LSP.Types.Lens      as J
 import           Language.Haskell.LSP.Utility
 import qualified Yi.Rope as Yi
-import System.FilePath
 
 -- ---------------------------------------------------------------------
 {-# ANN module ("hlint: ignore Eta reduce" :: String) #-}
@@ -125,9 +124,7 @@ persistFileVFS vfs uri =
       case tfile of
         Just tfn -> return (tfn, vfs)
         Nothing  -> do
-          tdir <- getCanonicalTemporaryDirectory
-          let fn = (tdir </> "A.hs")
-          writeFile fn (Yi.toString txt)
+          fn <- writeSystemTempFile "VFS.hs" (Yi.toString txt)
           return $ (fn, Map.insert uri (VirtualFile v txt (Just fn)) vfs)
 
 -- ---------------------------------------------------------------------
