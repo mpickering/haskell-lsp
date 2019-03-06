@@ -76,6 +76,7 @@ data LanguageContextData a =
   , resOptions             :: !Options
   , resSendResponse        :: !SendFunc
   , resVFS                 :: !VFS
+  , reverseMap             :: !(Map.Map FilePath FilePath)
   , resDiagnostics         :: !DiagnosticStore
   , resConfig              :: !(Maybe a)
   , resLspId               :: !(TVar Int)
@@ -135,6 +136,7 @@ data LspFuncs c =
     , sendFunc                     :: !SendFunc
     , getVirtualFileFunc           :: !(J.Uri -> IO (Maybe VirtualFile))
     , persistVirtualFileFunc       :: !(J.Uri -> IO FilePath)
+    , reverseFileMapFunc           :: !(IO (FilePath -> FilePath))
     , publishDiagnosticsFunc       :: !PublishDiagnosticsFunc
     , flushDiagnosticsBySourceFunc :: !FlushDiagnosticsBySourceFunc
     , getNextReqId                 :: !(IO J.LspId)
@@ -147,12 +149,12 @@ data LspFuncs c =
       -- finishes it once f is completed.
       -- f is provided with an update function that allows it to report on
       -- the progress during the session.
-      -- 
+      --
       -- @since 0.10.0.0
     , withIndefiniteProgress       :: !(forall m a. MonadIO m => Text -> m a -> m a)
     -- ^ Same as 'withProgress' but for processes that do not report the
     -- precentage complete
-    -- 
+    --
     -- @since 0.10.0.0
     }
 
@@ -392,10 +394,28 @@ getVirtualFile tvarDat uri = Map.lookup uri . resVFS <$> readTVarIO tvarDat
 
 persistVirtualFile :: TVar (LanguageContextData c) -> J.Uri -> IO FilePath
 persistVirtualFile tvarDat uri = do
-  vfs <- resVFS <$> readTVarIO tvarDat
+  st <- readTVarIO tvarDat
+  let vfs = resVFS st
+      revMap = reverseMap st
+
   (fn, new_vfs) <- persistFileVFS vfs uri
-  atomically $ modifyTVar' tvarDat (\d -> d { resVFS = new_vfs })
+  let revMap' =
+        -- TODO: Does the VFS make sense for URIs which are not files?
+        -- The reverse map should perhaps be (FilePath -> URI)
+        case J.uriToFilePath uri of
+          Just uri_fp -> Map.insert fn uri_fp revMap
+          Nothing -> revMap
+
+  atomically $ modifyTVar' tvarDat (\d -> d { resVFS = new_vfs
+                                            , reverseMap = revMap' })
   return fn
+
+reverseFileMap :: TVar (LanguageContextData c)
+               -> IO (FilePath -> FilePath)
+reverseFileMap tvarDat = do
+  revMap <- reverseMap <$> readTVarIO tvarDat
+  let f fp = fromMaybe fp $ Map.lookup fp revMap
+  return f
 
 
 -- ---------------------------------------------------------------------
@@ -437,7 +457,7 @@ _ERR_MSG_URL = [ "`stack update` and install new haskell-lsp."
 --
 defaultLanguageContextData :: Handlers -> Options -> LspFuncs c -> TVar Int -> SendFunc -> Maybe FilePath -> LanguageContextData c
 defaultLanguageContextData h o lf tv sf cf =
-  LanguageContextData _INITIAL_RESPONSE_SEQUENCE h o sf mempty mempty Nothing tv lf cf mempty 0
+  LanguageContextData _INITIAL_RESPONSE_SEQUENCE h o sf mempty mempty mempty Nothing tv lf cf mempty 0
 
 -- ---------------------------------------------------------------------
 
@@ -606,14 +626,14 @@ initializeRequestHandler' (_configHandler,dispatcherProc) mHandler tvarCtx req@(
         let (C.ClientCapabilities _ _ wc _) = params ^. J.capabilities
         (C.WindowClientCapabilities mProgress) <- wc
         mProgress
-      
+
       -- Get a new id for the progress session and make a new one
       getNewProgressId :: MonadIO m => m Text
       getNewProgressId = fmap (T.pack . show) $ liftIO $ atomically $ do
         x <- resNextProgressId <$> readTVar tvarCtx
         modifyTVar tvarCtx (\ctx -> ctx { resNextProgressId = x + 1})
         return x
-      
+
       withProgress' :: (forall m. MonadIO m => Text -> ((Progress -> m ()) -> m a) -> m a)
       withProgress' title f
         | clientSupportsProgress = do
@@ -630,13 +650,13 @@ initializeRequestHandler' (_configHandler,dispatcherProc) mHandler tvarCtx req@(
           -- Send done notification
           liftIO $ sf $ NotProgressDone $ fmServerProgressDoneNotification $
             J.ProgressDoneParams progId
-          
+
           return res
         | otherwise = f (const $ return ())
           where updater progId sf (Progress percentage msg) = liftIO $
                   sf $ NotProgressReport $ fmServerProgressReportNotification $
                     J.ProgressReportParams progId msg percentage
-        
+
       withIndefiniteProgress' :: (forall m. MonadIO m => Text -> m a -> m a)
       withIndefiniteProgress' title f
         | clientSupportsProgress = do
@@ -653,7 +673,7 @@ initializeRequestHandler' (_configHandler,dispatcherProc) mHandler tvarCtx req@(
           -- Send done notification
           liftIO $ sf $ NotProgressDone $ fmServerProgressDoneNotification $
             J.ProgressDoneParams progId
-          
+
           return res
         | otherwise = f
 
@@ -663,6 +683,7 @@ initializeRequestHandler' (_configHandler,dispatcherProc) mHandler tvarCtx req@(
                             (resSendResponse ctx0)
                             (getVirtualFile tvarCtx)
                             (persistVirtualFile tvarCtx)
+                            (reverseFileMap tvarCtx)
                             (publishDiagnostics tvarCtx)
                             (flushDiagnosticsBySource tvarCtx)
                             (getLspId $ resLspId ctx0)
