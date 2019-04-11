@@ -119,7 +119,7 @@ changeFromServerVFS initVfs (J.RequestMessage _ _ _ params) = do
 persistFileVFS :: VFS -> J.Uri -> IO (FilePath, VFS)
 persistFileVFS vfs uri =
   case Map.lookup uri vfs of
-    Nothing -> error "File not found in VFS"
+    Nothing -> error ("File not found in VFS: " ++ show uri ++ show vfs)
     Just (VirtualFile v txt tfile) ->
       case tfile of
         Just tfn -> return (tfn, vfs)
