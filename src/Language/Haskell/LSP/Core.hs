@@ -142,7 +142,7 @@ data LspFuncs c =
     , getNextReqId                 :: !(IO J.LspId)
     , rootPath                     :: !(Maybe FilePath)
     , getWorkspaceFolders          :: !(IO (Maybe [J.WorkspaceFolder]))
-    , withProgress                 :: !(forall m a. MonadIO m => Text -> ((Progress -> m ()) -> m a) -> m a)
+    , withProgress                 :: !(forall m a. MonadIO m => Text -> ((Progress -> IO ()) -> m a) -> m a)
       -- ^ Wrapper for reporting progress to the client during a long running
       -- task.
       -- 'withProgress' @title f@ starts a new progress reporting session, and
@@ -622,10 +622,7 @@ initializeRequestHandler' (_configHandler,dispatcherProc) mHandler tvarCtx req@(
         | clientSupportsWfs = atomically $ Just . resWorkspaceFolders <$> readTVar tvc
         | otherwise = return Nothing
 
-      clientSupportsProgress = fromMaybe False $ do
-        let (C.ClientCapabilities _ _ wc _) = params ^. J.capabilities
-        (C.WindowClientCapabilities mProgress) <- wc
-        mProgress
+      clientSupportsProgress = True
 
       -- Get a new id for the progress session and make a new one
       getNewProgressId :: MonadIO m => m Text
@@ -634,7 +631,7 @@ initializeRequestHandler' (_configHandler,dispatcherProc) mHandler tvarCtx req@(
         modifyTVar tvarCtx (\ctx -> ctx { resNextProgressId = x + 1})
         return x
 
-      withProgress' :: (forall m. MonadIO m => Text -> ((Progress -> m ()) -> m a) -> m a)
+      withProgress' :: (forall m. MonadIO m => Text -> ((Progress -> IO ()) -> m a) -> m a)
       withProgress' title f
         | clientSupportsProgress = do
           sf <- liftIO $ resSendResponse <$> readTVarIO tvarCtx
