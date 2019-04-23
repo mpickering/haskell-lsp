@@ -622,7 +622,10 @@ initializeRequestHandler' (_configHandler,dispatcherProc) mHandler tvarCtx req@(
         | clientSupportsWfs = atomically $ Just . resWorkspaceFolders <$> readTVar tvc
         | otherwise = return Nothing
 
-      clientSupportsProgress = True
+      clientSupportsProgress = fromMaybe False $ do
+        let (C.ClientCapabilities _ _ wc _) = params ^. J.capabilities
+        (C.WindowClientCapabilities mProgress) <- wc
+        mProgress
 
       -- Get a new id for the progress session and make a new one
       getNewProgressId :: MonadIO m => m Text
