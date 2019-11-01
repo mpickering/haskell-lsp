@@ -63,6 +63,7 @@ import qualified System.Log.Handler as LH
 import qualified System.Log.Handler.Simple as LHS
 import           System.Log.Logger
 import qualified System.Log.Logger as L
+import Data.Hashable
 
 -- ---------------------------------------------------------------------
 {-# ANN module ("HLint: ignore Eta reduce"         :: String) #-}
@@ -492,15 +493,16 @@ hwf h tvarDat json = do
 getVirtualFile :: TVar (LanguageContextData config) -> J.NormalizedUri -> IO (Maybe VirtualFile)
 getVirtualFile tvarDat uri = Map.lookup uri . vfsMap . resVFS <$> readTVarIO tvarDat
 
+
 -- | Dump the current text for a given VFS file to a temporary file,
 -- and return the path to the file.
 persistVirtualFile :: TVar (LanguageContextData config) -> J.NormalizedUri -> IO FilePath
-persistVirtualFile tvarDat uri = do
-  st <- readTVarIO tvarDat
+persistVirtualFile tvarDat uri = join $ atomically $ do
+  st <- readTVar tvarDat
   let vfs = resVFS st
       revMap = reverseMap st
 
-  (fn, new_vfs) <- persistFileVFS vfs uri
+  let (fn, write) = persistFileVFS vfs uri
   let revMap' =
         -- TODO: Does the VFS make sense for URIs which are not files?
         -- The reverse map should perhaps be (FilePath -> URI)
@@ -508,9 +510,8 @@ persistVirtualFile tvarDat uri = do
           Just uri_fp -> Map.insert fn uri_fp revMap
           Nothing -> revMap
 
-  atomically $ modifyTVar' tvarDat (\d -> d { resVFS = new_vfs
-                                            , reverseMap = revMap' })
-  return fn
+  modifyTVar' tvarDat (\d -> d { reverseMap = revMap' })
+  return (fn <$ write)
 
 -- TODO: should this function return a URI?
 -- | If the contents of a VFS has been dumped to a temporary file, map

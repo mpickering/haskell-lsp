@@ -44,7 +44,6 @@ import           Data.Ord
 #if __GLASGOW_HASKELL__ < 804
 import           Data.Monoid
 #endif
-import           System.IO.Temp
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Map as Map
 import           Data.Maybe
@@ -53,6 +52,8 @@ import qualified Data.Rope.UTF16 as Rope
 import qualified Language.Haskell.LSP.Types           as J
 import qualified Language.Haskell.LSP.Types.Lens      as J
 import           Language.Haskell.LSP.Utility
+import System.FilePath
+import Data.Hashable
 
 import Debug.Trace
 
@@ -137,20 +138,17 @@ changeFromServerVFS initVfs (J.RequestMessage _ _ _ params) = do
     editToChangeEvent (J.TextEdit range text) = J.TextDocumentContentChangeEvent (Just range) Nothing text
 
 -- ---------------------------------------------------------------------
+virtualFileName :: FilePath -> J.NormalizedUri -> VirtualFile -> FilePath
+virtualFileName prefix uri (VirtualFile ver _ _) =
+  prefix </> show (hash (J.fromNormalizedUri uri)) ++ "-" ++ show ver ++ ".hs"
 
-persistFileVFS :: VFS -> J.NormalizedUri -> IO (FilePath, VFS)
-persistFileVFS vfs uri = do
-  traceEventIO $ "START persistFile" ++ show uri
+persistFileVFS :: VFS -> J.NormalizedUri -> (FilePath, IO ())
+persistFileVFS vfs uri =
   case Map.lookup uri (vfsMap vfs) of
     Nothing -> error ("File not found in VFS: " ++ show uri ++ show vfs)
-    Just (VirtualFile v txt tfile) ->
-      case tfile of
-        Just tfn -> return (tfn, vfs)
-        Nothing  -> do
-          fn <- writeSystemTempFile "VFS.hs" (Rope.toString txt)
-          logs fn
-          traceEventIO $ "STOP persistFile" ++ show uri
-          return (fn, updateVFS (Map.insert uri (VirtualFile v txt (Just fn))) vfs)
+    Just vf@(VirtualFile _v txt tfile) ->
+      let tfn = virtualFileName (vfsTempDir vfs) uri vf
+      in (tfn, writeFile tfn (Rope.toString txt))
 
 -- ---------------------------------------------------------------------
 
