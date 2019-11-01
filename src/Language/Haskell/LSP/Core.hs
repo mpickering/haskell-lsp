@@ -29,6 +29,7 @@ module Language.Haskell.LSP.Core (
   ) where
 
 import           Control.Concurrent.STM
+import           Control.Concurrent
 import           Control.Concurrent.Async
 import qualified Control.Exception as E
 import           Control.Monad
@@ -489,7 +490,7 @@ hwf h tvarDat json = do
 -- ---------------------------------------------------------------------
 
 getVirtualFile :: TVar (LanguageContextData config) -> J.NormalizedUri -> IO (Maybe VirtualFile)
-getVirtualFile tvarDat uri = Map.lookup uri . resVFS <$> readTVarIO tvarDat
+getVirtualFile tvarDat uri = Map.lookup uri . vfsMap . resVFS <$> readTVarIO tvarDat
 
 -- | Dump the current text for a given VFS file to a temporary file,
 -- and return the path to the file.
@@ -558,9 +559,9 @@ _ERR_MSG_URL = [ "`stack update` and install new haskell-lsp."
 -- |
 --
 --
-defaultLanguageContextData :: Handlers -> Options -> LspFuncs config -> TVar Int -> SendFunc -> Maybe FilePath -> LanguageContextData config
-defaultLanguageContextData h o lf tv sf cf =
-  LanguageContextData _INITIAL_RESPONSE_SEQUENCE h o sf mempty mempty mempty
+defaultLanguageContextData :: Handlers -> Options -> LspFuncs config -> TVar Int -> SendFunc -> Maybe FilePath -> VFS -> LanguageContextData config
+defaultLanguageContextData h o lf tv sf cf vfs =
+  LanguageContextData _INITIAL_RESPONSE_SEQUENCE h o sf vfs mempty mempty
                       Nothing tv lf cf mempty defaultProgressData
 
 defaultProgressData :: ProgressData
@@ -844,7 +845,7 @@ initializeRequestHandler' onStartup mHandler tvarCtx req@(J.RequestMessage _ ori
           static (Just d) _ = Just d
           static _ (Just _) = Just (J.GotoOptionsStatic True)
           static _ Nothing  = Nothing
-          
+
           static' (Just d) (Just _) = Just d
           static' _ (Just _) = Just (J.CodeActionOptionsStatic True)
           static' _ _  = Nothing

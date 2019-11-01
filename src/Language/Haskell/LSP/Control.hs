@@ -31,8 +31,10 @@ import           Data.Monoid
 import           Language.Haskell.LSP.Capture
 import qualified Language.Haskell.LSP.Core as Core
 import           Language.Haskell.LSP.Messages
+import           Language.Haskell.LSP.VFS
 import           Language.Haskell.LSP.Utility
 import           System.IO
+import           System.IO.Temp
 import           System.FilePath
 
 -- ---------------------------------------------------------------------
@@ -84,9 +86,10 @@ runWithHandles hin hout initializeCallbacks h o captureFp = do
 
   tvarId <- atomically $ newTVar 0
 
-  tvarDat <- atomically $ newTVar $ Core.defaultLanguageContextData h o lf tvarId sendFunc timestampCaptureFp
+  withSystemTempDirectory "haskell-lsp" $ \temp_dir -> do
+    tvarDat <- atomically $ newTVar $ Core.defaultLanguageContextData h o lf tvarId sendFunc timestampCaptureFp (VFS mempty temp_dir)
 
-  ioLoop hin initializeCallbacks tvarDat
+    ioLoop hin initializeCallbacks tvarDat
 
   return 1
 
