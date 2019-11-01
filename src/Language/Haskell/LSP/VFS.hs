@@ -22,6 +22,7 @@ module Language.Haskell.LSP.VFS
   , changeFromServerVFS
   , persistFileVFS
   , closeVFS
+  , updateVFS
 
   -- * manipulating the file contents
   , rangeLinesFromVfs
@@ -52,8 +53,9 @@ import qualified Data.Rope.UTF16 as Rope
 import qualified Language.Haskell.LSP.Types           as J
 import qualified Language.Haskell.LSP.Types.Lens      as J
 import           Language.Haskell.LSP.Utility
-import System.FilePath
-import Data.Hashable
+import           System.FilePath
+import           Data.Hashable
+import           System.Directory
 
 import Debug.Trace
 
@@ -148,7 +150,10 @@ persistFileVFS vfs uri =
     Nothing -> error ("File not found in VFS: " ++ show uri ++ show vfs)
     Just vf@(VirtualFile _v txt tfile) ->
       let tfn = virtualFileName (vfsTempDir vfs) uri vf
-      in (tfn, writeFile tfn (Rope.toString txt))
+          action = do
+            exists <- doesFileExist tfn
+            unless exists (writeFile tfn (Rope.toString txt))
+      in (tfn, action)
 
 -- ---------------------------------------------------------------------
 
