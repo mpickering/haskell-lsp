@@ -4,6 +4,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 {-|
 Handles the "Language.Haskell.LSP.Types.TextDocumentDidChange" \/
@@ -16,6 +17,7 @@ module Language.Haskell.LSP.VFS
   (
     VFS
   , VirtualFile(..)
+  , virtualFileText
   , openVFS
   , changeFromClientVFS
   , changeFromServerVFS
@@ -67,9 +69,12 @@ data VirtualFile =
 
 type VFS = Map.Map J.NormalizedUri VirtualFile
 
+virtualFileText :: VirtualFile -> Text
+virtualFileText VirtualFile{_text} = Rope.toText _text
+
 -- ---------------------------------------------------------------------
 
-openVFS :: VFS -> J.DidOpenTextDocumentNotification -> IO VFS
+openVFS :: Monad m => VFS -> J.DidOpenTextDocumentNotification -> m VFS
 openVFS vfs (J.NotificationMessage _ _ params) = do
   let J.DidOpenTextDocumentParams
          (J.TextDocumentItem uri _ version text) = params
@@ -77,7 +82,7 @@ openVFS vfs (J.NotificationMessage _ _ params) = do
 
 -- ---------------------------------------------------------------------
 
-changeFromClientVFS :: VFS -> J.DidChangeTextDocumentNotification -> IO VFS
+changeFromClientVFS :: Monad m => VFS -> J.DidChangeTextDocumentNotification -> m VFS
 changeFromClientVFS vfs (J.NotificationMessage _ _ params) = do
   let
     J.DidChangeTextDocumentParams vid (J.List changes) = params
@@ -88,7 +93,6 @@ changeFromClientVFS vfs (J.NotificationMessage _ _ params) = do
       -- the client shouldn't be sending over a null version, only the server.
       return $ Map.insert uri (VirtualFile (fromMaybe 0 version) str' Nothing) vfs
     Nothing -> do
-      logs $ "haskell-lsp:changeVfs:can't find uri:" ++ show uri
       return vfs
 
 -- ---------------------------------------------------------------------
@@ -138,7 +142,7 @@ persistFileVFS vfs uri =
 
 -- ---------------------------------------------------------------------
 
-closeVFS :: VFS -> J.DidCloseTextDocumentNotification -> IO VFS
+closeVFS :: Monad m => VFS -> J.DidCloseTextDocumentNotification -> m VFS
 closeVFS vfs (J.NotificationMessage _ _ params) = do
   let J.DidCloseTextDocumentParams (J.TextDocumentIdentifier uri) = params
   return $ Map.delete (J.toNormalizedUri uri) vfs

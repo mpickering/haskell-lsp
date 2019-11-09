@@ -25,7 +25,7 @@ spec =
         initialConfigHandler _ =
           error "Got the wrong request for the onInitialConfiguration callback"
 
-        initCb :: InitializeCallbacks String
+        initCb :: InitializeCallbacks IO String
         initCb = InitializeCallbacks
           initialConfigHandler
           (const $ Left "")

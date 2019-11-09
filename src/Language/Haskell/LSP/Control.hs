@@ -11,11 +11,8 @@ module Language.Haskell.LSP.Control
   , runWithHandles
   ) where
 
-import           Control.Concurrent
-import           Control.Concurrent.STM.TChan
-import           Control.Concurrent.STM.TVar
+import           Control.Concurrent.Classy
 import           Control.Monad
-import           Control.Monad.STM
 import qualified Data.Aeson as J
 import qualified Data.Attoparsec.ByteString as Attoparsec
 import Data.Attoparsec.ByteString.Char8
@@ -38,11 +35,11 @@ import           System.FilePath
 -- ---------------------------------------------------------------------
 
 -- | Convenience function for 'runWithHandles stdin stdout'.
-run :: (Show configs) => Core.InitializeCallbacks configs
+run :: (Show configs) => Core.InitializeCallbacks IO configs
                 -- ^ function to be called once initialize has
                 -- been received from the client. Further message
                 -- processing will start only after this returns.
-    -> Core.Handlers
+    -> Core.Handlers IO
     -> Core.Options
     -> Maybe FilePath
     -- ^ File to capture the session to.
@@ -56,8 +53,8 @@ runWithHandles :: (Show config) =>
     -- ^ Handle to read client input from.
     -> Handle
     -- ^ Handle to write output to.
-    -> Core.InitializeCallbacks config
-    -> Core.Handlers
+    -> Core.InitializeCallbacks IO config
+    -> Core.Handlers IO
     -> Core.Options
     -> Maybe FilePath
     -> IO Int         -- exit code
@@ -74,11 +71,11 @@ runWithHandles hin hout initializeCallbacks h o captureFp = do
   let timestampCaptureFp = fmap (\f -> dropExtension f ++ timestamp ++ takeExtension f)
                                 captureFp
 
-  cout <- atomically newTChan :: IO (TChan FromServerMessage)
-  _rhpid <- forkIO $ sendServer cout hout timestampCaptureFp
+  cout <- atomically newTChan :: IO (TChan (STM IO) FromServerMessage)
+  _rhpid <- fork $ sendServer cout hout timestampCaptureFp
 
 
-  let sendFunc :: Core.SendFunc
+  let sendFunc :: Core.SendFunc IO
       sendFunc msg = atomically $ writeTChan cout msg
   let lf = error "LifeCycle error, ClientCapabilities not set yet via initialize maessage"
 
@@ -94,8 +91,8 @@ runWithHandles hin hout initializeCallbacks h o captureFp = do
 -- ---------------------------------------------------------------------
 
 ioLoop :: (Show config) => Handle
-                   -> Core.InitializeCallbacks config
-                   -> TVar (Core.LanguageContextData config)
+                   -> Core.InitializeCallbacks IO config
+                   -> TVar (STM IO) (Core.LanguageContextData (STM IO) IO config)
                    -> IO ()
 ioLoop hin dispatcherProc tvarDat =
   go (parse parser "")
@@ -122,7 +119,7 @@ ioLoop hin dispatcherProc tvarDat =
 -- ---------------------------------------------------------------------
 
 -- | Simple server to make sure all output is serialised
-sendServer :: TChan FromServerMessage -> Handle -> Maybe FilePath -> IO ()
+sendServer :: TChan (STM IO) FromServerMessage -> Handle -> Maybe FilePath -> IO ()
 sendServer msgChan clientH captureFp =
   forever $ do
     msg <- atomically $ readTChan msgChan
