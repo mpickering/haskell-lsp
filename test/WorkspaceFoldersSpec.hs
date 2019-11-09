@@ -18,7 +18,7 @@ spec =
 
     lfVar <- newEmptyMVar
 
-    let initCb :: InitializeCallbacks ()
+    let initCb :: InitializeCallbacks IO ()
         initCb = InitializeCallbacks
           (const $ Left "")
           (const $ Left "")

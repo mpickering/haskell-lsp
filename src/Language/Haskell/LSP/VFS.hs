@@ -18,6 +18,7 @@ module Language.Haskell.LSP.VFS
     VFS(..)
   , VirtualFile(..)
   , initVFS
+  , virtualFileText
   , openVFS
   , changeFromClientVFS
   , changeFromServerVFS
@@ -77,6 +78,9 @@ data VFS = VFS { vfsMap :: Map.Map J.NormalizedUri VirtualFile
 
 initVFS :: (VFS -> IO r) -> IO r
 initVFS k = withSystemTempDirectory "haskell-lsp" $ \temp_dir -> k (VFS mempty temp_dir)
+
+virtualFileText :: VirtualFile -> Text
+virtualFileText VirtualFile{_text} = Rope.toText _text
 
 -- ---------------------------------------------------------------------
 
