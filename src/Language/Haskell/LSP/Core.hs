@@ -5,6 +5,9 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module Language.Haskell.LSP.Core (
     handleMessage
@@ -18,6 +21,8 @@ module Language.Haskell.LSP.Core (
   , ProgressCancelledException
   , SendFunc
   , Handlers(..)
+  , HandlersG(..)
+  , MHandler(MJust, MNothing, ..)
   , Options(..)
   , defaultLanguageContextData
   , makeResponseMessage
@@ -29,6 +34,7 @@ module Language.Haskell.LSP.Core (
   , reverseSortEdit
   ) where
 
+import GHC.Generics
 import           Control.Concurrent.Async
 import           Control.Concurrent.STM
 import qualified Control.Exception as E
@@ -231,88 +237,98 @@ data InitializeCallbacks config =
 -- received message of type 'b'
 type Handler b =  b -> IO ()
 
+data MHandler a = MHandler { unM :: (Maybe (Handler a)) }
+
+type Handlers = HandlersG MHandler
+
 -- | Callbacks from the language server to the language handler
-data Handlers =
-  Handlers
+data HandlersG f =
+  HandlersG
     {
     -- Capability-advertised handlers
-      hoverHandler                   :: !(Maybe (Handler J.HoverRequest))
-    , completionHandler              :: !(Maybe (Handler J.CompletionRequest))
-    , completionResolveHandler       :: !(Maybe (Handler J.CompletionItemResolveRequest))
-    , signatureHelpHandler           :: !(Maybe (Handler J.SignatureHelpRequest))
-    , definitionHandler              :: !(Maybe (Handler J.DefinitionRequest))
-    , typeDefinitionHandler          :: !(Maybe (Handler J.TypeDefinitionRequest))
-    , implementationHandler          :: !(Maybe (Handler J.ImplementationRequest))
-    , referencesHandler              :: !(Maybe (Handler J.ReferencesRequest))
-    , documentHighlightHandler       :: !(Maybe (Handler J.DocumentHighlightRequest))
-    , documentSymbolHandler          :: !(Maybe (Handler J.DocumentSymbolRequest))
-    , workspaceSymbolHandler         :: !(Maybe (Handler J.WorkspaceSymbolRequest))
-    , codeActionHandler              :: !(Maybe (Handler J.CodeActionRequest))
-    , codeLensHandler                :: !(Maybe (Handler J.CodeLensRequest))
-    , codeLensResolveHandler         :: !(Maybe (Handler J.CodeLensResolveRequest))
-    , documentColorHandler           :: !(Maybe (Handler J.DocumentColorRequest))
-    , colorPresentationHandler       :: !(Maybe (Handler J.ColorPresentationRequest))
-    , documentFormattingHandler      :: !(Maybe (Handler J.DocumentFormattingRequest))
-    , documentRangeFormattingHandler :: !(Maybe (Handler J.DocumentRangeFormattingRequest))
-    , documentOnTypeFormattingHandler :: !(Maybe (Handler J.DocumentOnTypeFormattingRequest))
-    , renameHandler                  :: !(Maybe (Handler J.RenameRequest))
-    , prepareRenameHandler           :: !(Maybe (Handler J.PrepareRenameRequest))
-    , foldingRangeHandler            :: !(Maybe (Handler J.FoldingRangeRequest))
+      hoverHandler                   :: !(f J.HoverRequest)
+    , completionHandler              :: !(f J.CompletionRequest)
+    , completionResolveHandler       :: !(f J.CompletionItemResolveRequest)
+    , signatureHelpHandler           :: !(f J.SignatureHelpRequest)
+    , definitionHandler              :: !(f J.DefinitionRequest)
+    , typeDefinitionHandler          :: !(f J.TypeDefinitionRequest)
+    , implementationHandler          :: !(f J.ImplementationRequest)
+    , referencesHandler              :: !(f J.ReferencesRequest)
+    , documentHighlightHandler       :: !(f J.DocumentHighlightRequest)
+    , documentSymbolHandler          :: !(f J.DocumentSymbolRequest)
+    , workspaceSymbolHandler         :: !(f J.WorkspaceSymbolRequest)
+    , codeActionHandler              :: !(f J.CodeActionRequest)
+    , codeLensHandler                :: !(f J.CodeLensRequest)
+    , codeLensResolveHandler         :: !(f J.CodeLensResolveRequest)
+    , documentColorHandler           :: !(f J.DocumentColorRequest)
+    , colorPresentationHandler       :: !(f J.ColorPresentationRequest)
+    , documentFormattingHandler      :: !(f J.DocumentFormattingRequest)
+    , documentRangeFormattingHandler :: !(f J.DocumentRangeFormattingRequest)
+    , documentOnTypeFormattingHandler :: !(f J.DocumentOnTypeFormattingRequest)
+    , renameHandler                  :: !(f J.RenameRequest)
+    , prepareRenameHandler           :: !(f J.PrepareRenameRequest)
+    , foldingRangeHandler            :: !(f J.FoldingRangeRequest)
     -- new in 3.0
-    , documentLinkHandler            :: !(Maybe (Handler J.DocumentLinkRequest))
-    , documentLinkResolveHandler     :: !(Maybe (Handler J.DocumentLinkResolveRequest))
-    , executeCommandHandler          :: !(Maybe (Handler J.ExecuteCommandRequest))
+    , documentLinkHandler            :: !(f J.DocumentLinkRequest)
+    , documentLinkResolveHandler     :: !(f J.DocumentLinkResolveRequest)
+    , executeCommandHandler          :: !(f J.ExecuteCommandRequest)
     -- Next 2 go from server -> client
-    -- , registerCapabilityHandler      :: !(Maybe (Handler J.RegisterCapabilityRequest))
-    -- , unregisterCapabilityHandler    :: !(Maybe (Handler J.UnregisterCapabilityRequest))
-    , willSaveWaitUntilTextDocHandler:: !(Maybe (Handler J.WillSaveWaitUntilTextDocumentRequest))
+    -- , registerCapabilityHandler      :: !(f J.RegisterCapabilityRequest)
+    -- , unregisterCapabilityHandler    :: !(f J.UnregisterCapabilityRequest)
+    , willSaveWaitUntilTextDocHandler:: !(f J.WillSaveWaitUntilTextDocumentRequest)
 
     -- Notifications from the client
-    , didChangeConfigurationParamsHandler      :: !(Maybe (Handler J.DidChangeConfigurationNotification))
-    , didOpenTextDocumentNotificationHandler   :: !(Maybe (Handler J.DidOpenTextDocumentNotification))
-    , didChangeTextDocumentNotificationHandler :: !(Maybe (Handler J.DidChangeTextDocumentNotification))
+    , didChangeConfigurationParamsHandler      :: !(f J.DidChangeConfigurationNotification)
+    , didOpenTextDocumentNotificationHandler   :: !(f J.DidOpenTextDocumentNotification)
+    , didChangeTextDocumentNotificationHandler :: !(f J.DidChangeTextDocumentNotification)
     -- ^ Note: If you need to keep track of document changes,
     -- "Language.Haskell.LSP.VFS" will take care of these messages for you!
-    , didCloseTextDocumentNotificationHandler  :: !(Maybe (Handler J.DidCloseTextDocumentNotification))
-    , didSaveTextDocumentNotificationHandler   :: !(Maybe (Handler J.DidSaveTextDocumentNotification))
-    , didChangeWatchedFilesNotificationHandler :: !(Maybe (Handler J.DidChangeWatchedFilesNotification))
-    , didChangeWorkspaceFoldersNotificationHandler :: !(Maybe (Handler J.DidChangeWorkspaceFoldersNotification))
+    , didCloseTextDocumentNotificationHandler  :: !(f J.DidCloseTextDocumentNotification)
+    , didSaveTextDocumentNotificationHandler   :: !(f J.DidSaveTextDocumentNotification)
+    , didChangeWatchedFilesNotificationHandler :: !(f J.DidChangeWatchedFilesNotification)
+    , didChangeWorkspaceFoldersNotificationHandler :: !(f J.DidChangeWorkspaceFoldersNotification)
     -- new in 3.0
-    , initializedHandler                       :: !(Maybe (Handler J.InitializedNotification))
-    , willSaveTextDocumentNotificationHandler  :: !(Maybe (Handler J.WillSaveTextDocumentNotification))
-    , cancelNotificationHandler                :: !(Maybe (Handler J.CancelNotification))
+    , initializedHandler                       :: !(f J.InitializedNotification)
+    , willSaveTextDocumentNotificationHandler  :: !(f J.WillSaveTextDocumentNotification)
+    , cancelNotificationHandler                :: !(f J.CancelNotification)
 
     -- Responses to Request messages originated from the server
     -- TODO: Properly decode response types and replace them with actual handlers
-    , responseHandler                    :: !(Maybe (Handler J.BareResponseMessage))
-    -- , registerCapabilityHandler                :: !(Maybe (Handler J.RegisterCapabilityResponse))
-    -- , unregisterCapabilityHandler              :: !(Maybe (Handler J.RegisterCapabilityResponse))
-    -- , showMessageHandler                       :: !(Maybe (Handler J.ShowMessageResponse))
+    , responseHandler                    :: !(f J.BareResponseMessage)
+    -- , registerCapabilityHandler                :: !(f J.RegisterCapabilityResponse)
+    -- , unregisterCapabilityHandler              :: !(f J.RegisterCapabilityResponse)
+    -- , showMessageHandler                       :: !(f J.ShowMessageResponse)
 
     -- Initialization request on startup
-    , initializeRequestHandler                 :: !(Maybe (Handler J.InitializeRequest))
+    , initializeRequestHandler                 :: !(f J.InitializeRequest)
     -- Will default to terminating `exitMessage` if Nothing
-    , exitNotificationHandler                  :: !(Maybe (Handler J.ExitNotification))
+    , exitNotificationHandler                  :: !(f J.ExitNotification)
 
-    , customRequestHandler                     :: !(Maybe (Handler J.CustomClientRequest))
-    , customNotificationHandler                :: !(Maybe (Handler J.CustomClientNotification))
+    , customRequestHandler                     :: !(f J.CustomClientRequest)
+    , customNotificationHandler                :: !(f J.CustomClientNotification)
 
-    }
+    } deriving Generic
 
-instance Default Handlers where
+instance Default (HandlersG MHandler) where
   -- These already implicitly do stuff to the VFS, so silence warnings about no handler
-  def = nothings { didChangeTextDocumentNotificationHandler = Just ignore
-                 , didOpenTextDocumentNotificationHandler   = Just ignore
-                 , didCloseTextDocumentNotificationHandler  = Just ignore
+  def = nothings { didChangeTextDocumentNotificationHandler = MJust ignore
+                 , didOpenTextDocumentNotificationHandler   = MJust ignore
+                 , didCloseTextDocumentNotificationHandler  = MJust ignore
                  }
     where ignore = const (pure ())
-          nothings = Handlers Nothing Nothing Nothing Nothing Nothing Nothing
-                              Nothing Nothing Nothing Nothing Nothing Nothing
-                              Nothing Nothing Nothing Nothing Nothing Nothing
-                              Nothing Nothing Nothing Nothing Nothing Nothing
-                              Nothing Nothing Nothing Nothing Nothing Nothing
-                              Nothing Nothing Nothing Nothing Nothing Nothing
-                              Nothing Nothing Nothing Nothing Nothing
+          nothings = HandlersG MNothing MNothing MNothing MNothing MNothing MNothing
+                              MNothing MNothing MNothing MNothing MNothing MNothing
+                              MNothing MNothing MNothing MNothing MNothing MNothing
+                              MNothing MNothing MNothing MNothing MNothing MNothing
+                              MNothing MNothing MNothing MNothing MNothing MNothing
+                              MNothing MNothing MNothing MNothing MNothing MNothing
+                              MNothing MNothing MNothing MNothing MNothing
+
+{-# COMPLETE MJust, MNothing #-}
+pattern MJust x = MHandler (Just x)
+pattern MNothing = MHandler Nothing
+isMJust (MJust x) = True
+isMJust MNothing = False
 
 -- ---------------------------------------------------------------------
 nop :: Maybe (a -> b -> (a,[String]))
@@ -343,8 +359,8 @@ handlerMap _ h J.Initialized                     = hh nop NotInitialized $ initi
 handlerMap _ _ J.Shutdown                        = helper shutdownRequestHandler
 handlerMap _ h J.Exit                            =
   case exitNotificationHandler h of
-    Just _ -> hh nop NotExit $ exitNotificationHandler h
-    Nothing -> \ctxVar v -> do
+    MJust _ -> hh nop NotExit $ exitNotificationHandler h
+    MNothing -> \ctxVar v -> do
       ctx <- readTVarIO ctxVar
       -- Capture exit notification
       case J.fromJSON v :: J.Result J.ExitNotification of
@@ -403,7 +419,7 @@ handlerMap _ h (J.CustomClientMethod _)          = \ctxData val ->
 -- | Adapter from the normal handlers exposed to the library users and the
 -- internal message loop
 hh :: forall b config. (J.FromJSON b)
-   => Maybe (VFS -> b -> (VFS, [String])) -> (b -> FromClientMessage) -> Maybe (Handler b)
+   => Maybe (VFS -> b -> (VFS, [String])) -> (b -> FromClientMessage) -> (MHandler b)
    -> TVar (LanguageContextData config) -> J.Value -> IO ()
 hh mVfs wrapper mh tvarDat json = do
       case J.fromJSON json of
@@ -420,8 +436,8 @@ hh mVfs wrapper mh tvarDat json = do
           captureFromClient req' (resCaptureFile ctx)
 
           case mh of
-            Just h -> h req
-            Nothing
+            MJust h -> h req
+            MNothing
               -- '$/' notifications should/could be ignored by server.
               -- Don't log errors in that case.
               -- See https://microsoft.github.io/language-server-protocol/specifications/specification-current/#-notifications-and-requests.
@@ -444,14 +460,14 @@ hh mVfs wrapper mh tvarDat json = do
 handleInitialConfig
   :: (Show config)
   => InitializeCallbacks config
-  -> Maybe (Handler J.InitializeRequest)
+  -> (MHandler J.InitializeRequest)
   -> TVar (LanguageContextData config)
   -> J.Value
   -> IO ()
 handleInitialConfig (InitializeCallbacks { onInitialConfiguration, onStartup }) mh tvarDat json
   = handleMessageWithConfigChange ReqInitialize
                                   onInitialConfiguration
-                                  (Just $ initializeRequestHandler' onStartup mh tvarDat)
+                                  (MJust $ initializeRequestHandler' onStartup mh tvarDat)
                                   tvarDat
                                   json
 
@@ -459,7 +475,7 @@ handleInitialConfig (InitializeCallbacks { onInitialConfiguration, onStartup }) 
 hc
   :: (Show config)
   => InitializeCallbacks config
-  -> Maybe (Handler J.DidChangeConfigurationNotification)
+  -> MHandler (J.DidChangeConfigurationNotification)
   -> TVar (LanguageContextData config)
   -> J.Value
   -> IO ()
@@ -474,7 +490,7 @@ handleMessageWithConfigChange
   :: (J.FromJSON reqParams, Show reqParams, Show err)
   => (reqParams -> FromClientMessage) -- ^ The notification message from the client to expect
   -> (reqParams -> Either err config) -- ^ A function to parse the config out of the request
-  -> Maybe (reqParams -> IO ()) -- ^ The upstream handler for the client request
+  -> MHandler reqParams  -- ^ The upstream handler for the client request
   -> TVar (LanguageContextData config) -- ^ The context data containing the current configuration
   -> J.Value -- ^ The raw reqeust data
   -> IO ()
@@ -496,8 +512,8 @@ handleMessageWithConfigChange notification parseConfig mh tvarDat json =
         Right newConfig ->
           atomically $ modifyTVar' tvarDat (\ctx' -> ctx' { resConfig = Just newConfig })
       case mh of
-        Just h  -> h req
-        Nothing -> return ()
+        MJust h  -> h req
+        MNothing -> return ()
     J.Error err -> do
       let msg =
             T.pack
@@ -507,7 +523,7 @@ handleMessageWithConfigChange notification parseConfig mh tvarDat json =
       sendErrorLog tvarDat msg
 
 -- | Updates the list of workspace folders and then delegates back to 'hh'
-hwf :: Maybe (Handler J.DidChangeWorkspaceFoldersNotification) -> TVar (LanguageContextData config) -> J.Value -> IO ()
+hwf :: (MHandler (J.DidChangeWorkspaceFoldersNotification)) -> TVar (LanguageContextData config) -> J.Value -> IO ()
 hwf h tvarDat json = do
   case J.fromJSON json :: J.Result J.DidChangeWorkspaceFoldersNotification of
     J.Success (J.NotificationMessage _ _ params) -> atomically $ do
@@ -652,8 +668,8 @@ handleMessage dispatcherProc tvarDat jsonStr = do
     handleResponse json = do
       ctx <- readTVarIO tvarDat
       case responseHandler $ resHandlers ctx of
-        Nothing -> sendErrorLog tvarDat $ T.pack $ "haskell-lsp: responseHandler is not defined, ignoring response " ++ lbs2str jsonStr
-        Just h -> case J.fromJSON json of
+        MNothing -> sendErrorLog tvarDat $ T.pack $ "haskell-lsp: responseHandler is not defined, ignoring response " ++ lbs2str jsonStr
+        MJust h -> case J.fromJSON json of
           J.Success res -> h res
           J.Error err -> let msg = T.pack $ unwords $ ["haskell-lsp:response parse error.", lbs2str jsonStr, show err] ++ _ERR_MSG_URL
                            in sendErrorLog tvarDat msg
@@ -731,7 +747,7 @@ defaultErrorHandlers tvarDat origId req = [ E.Handler someExcept ]
 initializeRequestHandler'
   :: (Show config)
   => (LspFuncs config -> IO (Maybe J.ResponseError))
-  -> Maybe (Handler J.InitializeRequest)
+  -> MHandler J.InitializeRequest
   -> TVar (LanguageContextData config)
   -> J.InitializeRequest
   -> IO ()
@@ -739,8 +755,8 @@ initializeRequestHandler' onStartup mHandler tvarCtx req@(J.RequestMessage _ ori
   flip E.catches (defaultErrorHandlers tvarCtx (J.responseId origId) req) $ do
 
     case mHandler of
-      Just handler -> handler req
-      Nothing -> return ()
+      MJust handler -> handler req
+      MNothing -> return ()
 
     let wfs = case params ^. J.workspaceFolders of
                 Just (J.List xs) -> xs
@@ -896,8 +912,8 @@ serverCapabilities clientCaps o h =
     , J._completionProvider               = completionProvider
     , J._signatureHelpProvider            = signatureHelpProvider
     , J._definitionProvider               = supported (definitionHandler h)
-    , J._typeDefinitionProvider           = Just $ J.GotoOptionsStatic $ isJust $ typeDefinitionHandler h
-    , J._implementationProvider           = Just $ J.GotoOptionsStatic $ isJust $ typeDefinitionHandler h
+    , J._typeDefinitionProvider           = Just $ J.GotoOptionsStatic $ isMJust $ typeDefinitionHandler h
+    , J._implementationProvider           = Just $ J.GotoOptionsStatic $ isMJust $ typeDefinitionHandler h
     , J._referencesProvider               = supported (referencesHandler h)
     , J._documentHighlightProvider        = supported (documentHighlightHandler h)
     , J._documentSymbolProvider           = supported (documentSymbolHandler h)
@@ -908,11 +924,11 @@ serverCapabilities clientCaps o h =
     , J._documentFormattingProvider       = supported (documentFormattingHandler h)
     , J._documentRangeFormattingProvider  = supported (documentRangeFormattingHandler h)
     , J._documentOnTypeFormattingProvider = documentOnTypeFormattingProvider
-    , J._renameProvider                   = Just $ J.RenameOptionsStatic $ isJust $ renameHandler h
+    , J._renameProvider                   = Just $ J.RenameOptionsStatic $ isMJust $ renameHandler h
     , J._documentLinkProvider             = supported' (documentLinkHandler h) $ J.DocumentLinkOptions $
-                                              Just $ isJust $ documentLinkResolveHandler h
-    , J._colorProvider                    = Just $ J.ColorOptionsStatic $ isJust $ documentColorHandler h
-    , J._foldingRangeProvider             = Just $ J.FoldingRangeOptionsStatic $ isJust $ foldingRangeHandler h
+                                              Just $ isMJust $ documentLinkResolveHandler h
+    , J._colorProvider                    = Just $ J.ColorOptionsStatic $ isMJust $ documentColorHandler h
+    , J._foldingRangeProvider             = Just $ J.FoldingRangeOptionsStatic $ isMJust $ foldingRangeHandler h
     , J._executeCommandProvider           = executeCommandProvider
     , J._workspace                        = Just workspace
     -- TODO: Add something for experimental
@@ -921,16 +937,16 @@ serverCapabilities clientCaps o h =
   where
     supported x = supported' x True
 
-    supported' (Just _) = Just
-    supported' Nothing = const Nothing
+    supported' (MJust _) = Just
+    supported' MNothing = const Nothing
 
     singleton :: a -> [a]
     singleton x = [x]
 
     completionProvider
-      | isJust $ completionHandler h = Just $
+      | isMJust $ completionHandler h = Just $
           J.CompletionOptions
-            (Just $ isJust $ completionResolveHandler h)
+            (Just $ isMJust $ completionResolveHandler h)
             (map singleton <$> completionTriggerCharacters o)
             (map singleton <$> completionAllCommitCharacters o)
       | otherwise = Nothing
@@ -940,30 +956,30 @@ serverCapabilities clientCaps o h =
 
     codeActionProvider
       | clientSupportsCodeActionKinds
-      , isJust $ codeActionHandler h = Just $ maybe (J.CodeActionOptionsStatic True) (J.CodeActionOptions . Just) (codeActionKinds o)
-      | isJust $ codeActionHandler h = Just (J.CodeActionOptionsStatic True)
+      , isMJust $ codeActionHandler h = Just $ maybe (J.CodeActionOptionsStatic True) (J.CodeActionOptions . Just) (codeActionKinds o)
+      | isMJust $ codeActionHandler h = Just (J.CodeActionOptionsStatic True)
       | otherwise = Just (J.CodeActionOptionsStatic False)
 
     signatureHelpProvider
-      | isJust $ signatureHelpHandler h = Just $
+      | isMJust $ signatureHelpHandler h = Just $
           J.SignatureHelpOptions
             (map singleton <$> signatureHelpTriggerCharacters o)
             (map singleton <$> signatureHelpRetriggerCharacters o)
       | otherwise = Nothing
 
     documentOnTypeFormattingProvider
-      | isJust $ documentOnTypeFormattingHandler h
+      | isMJust $ documentOnTypeFormattingHandler h
       , Just (first :| rest) <- documentOnTypeFormattingTriggerCharacters o = Just $
           J.DocumentOnTypeFormattingOptions (T.pack [first]) (Just (map (T.pack . singleton) rest))
-      | isJust $ documentOnTypeFormattingHandler h
+      | isMJust $ documentOnTypeFormattingHandler h
       , Nothing <- documentOnTypeFormattingTriggerCharacters o =
           error "documentOnTypeFormattingTriggerCharacters needs to be set if a documentOnTypeFormattingHandler is set"
       | otherwise = Nothing
 
     executeCommandProvider
-      | isJust $ executeCommandHandler h
+      | isMJust $ executeCommandHandler h
       , Just cmds <- executeCommandCommands o = Just (J.ExecuteCommandOptions (J.List cmds))
-      | isJust $ executeCommandHandler h
+      | isMJust $ executeCommandHandler h
       , Nothing <- executeCommandCommands o =
           error "executeCommandCommands needs to be set if a executeCommandHandler is set"
       | otherwise = Nothing
@@ -974,10 +990,10 @@ serverCapabilities clientCaps o h =
 
     workspace = J.WorkspaceOptions workspaceFolder
     workspaceFolder = case didChangeWorkspaceFoldersNotificationHandler h of
-      Just _ -> Just $
+      MJust _ -> Just $
         -- sign up to receive notifications
         J.WorkspaceFolderOptions (Just True) (Just (J.WorkspaceFolderChangeNotificationsBool True))
-      Nothing -> Nothing
+      MNothing -> Nothing
 
 progressCancelHandler :: TVar (LanguageContextData config) -> J.WorkDoneProgressCancelNotification -> IO ()
 progressCancelHandler tvarCtx (J.NotificationMessage _ _ (J.WorkDoneProgressCancelParams tid)) = do
@@ -1038,7 +1054,7 @@ flushDiagnosticsBySource tvarDat maxDiagnosticCount msource = join $ atomically 
 --  utility
 
 
--- 
+--
 --  Logger
 --
 setupLogger :: Maybe FilePath -> [String] -> Priority -> IO ()
